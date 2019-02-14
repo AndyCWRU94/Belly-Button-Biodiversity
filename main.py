@@ -1,35 +1,40 @@
-
-from flask import Flask, jsonify, render_template, request, flash, redirect
-
-# SQL Alchemy (ORM)
-import sqlalchemy
-from sqlalchemy.ext.automap import automap_base
-from sqlalchemy.orm import Session
-from sqlalchemy import create_engine, func, desc,select
+import os
 
 import pandas as pd
 import numpy as np
 
+import sqlalchemy
+from sqlalchemy.ext.automap import automap_base
+from sqlalchemy.orm import Session
+from sqlalchemy import create_engine
 
-# Db
-engine = create_engine("sqlite:///DataSets/belly_button_biodiversity.sqlite")
+from flask import Flask, jsonify, render_template
+from flask_sqlalchemy import SQLAlchemy
 
+app = Flask(__name__)
+
+#################################################
+# Database Setup
+#################################################
+engine = create_engine("sqlite:///Data/belly_button_biodiversity.sqlite")
+
+# reflect an existing database into a new model
 Base = automap_base()
+# reflect the tables
 Base.prepare(engine, reflect=True)
 
 
 OTU = Base.classes.otu
+# Save references to each table
 Samples = Base.classes.samples
 Samples_Metadata= Base.classes.samples_metadata
 
 # Create session
 session = Session(engine)
 
-
-app = Flask(__name__)
-
 @app.route("/")
 def index():
+    """Return the homepage."""
     return render_template("index.html")
 
 
@@ -80,7 +85,6 @@ def sample_metadata(sample):
 @app.route('/wfreq/<sample>')
 def sample_wfreq(sample):
     """Return the Weekly Washing Frequency as a number."""
-
     # `sample[3:]` strips the `BB_` prefix
     results = session.query(Samples_Metadata.WFREQ).\
         filter(Samples_Metadata.SAMPLEID == sample[3:]).all()
