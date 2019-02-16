@@ -82,8 +82,6 @@ def wfreq(sample):
     result = session.query(Metadata.WFREQ,\
                            Metadata.SAMPLEID)\
                     .filter(Metadata.SAMPLEID == bb_id).first()
-    
-    
     return jsonify(result)
 
 
