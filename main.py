@@ -1,121 +1,95 @@
-import os
-
-import pandas as pd
+# import necessary libraries
 import numpy as np
-
-import sqlalchemy
+import os
 from sqlalchemy.ext.automap import automap_base
-from sqlalchemy.orm import Session
-from sqlalchemy import create_engine
+from sqlalchemy.orm import Session, load_only
+from sqlalchemy import create_engine, func, desc, inspect
 
-from flask import Flask, jsonify, render_template
-from flask_sqlalchemy import SQLAlchemy
+from flask import (Flask,render_template,jsonify,request,redirect)
+
+# Flask Setup
 
 app = Flask(__name__)
-
+app.config['TEMPLATES_AUTO_RELOAD']=True
 #################################################
 # Database Setup
 #################################################
-engine = create_engine("sqlite:///Data/belly_button_biodiversity.sqlite")
+from flask_sqlalchemy import SQLAlchemy
 
-# reflect an existing database into a new model
+engine = create_engine("sqlite:///DataSets/belly_button_biodiversity.sqlite")
+# Reflecting db into a new model
 Base = automap_base()
-# reflect the tables
+# reflect tables
 Base.prepare(engine, reflect=True)
-
-
-OTU = Base.classes.otu
-# Save references to each table
-Samples = Base.classes.samples
-Samples_Metadata= Base.classes.samples_metadata
-
-# Create session
+# Save to class
 session = Session(engine)
+Metadata = Base.classes.samples_metadata
+Otu = Base.classes.otu
+Samples = Base.classes.samples
+def __repr__(self):
+    return '<Bio %r>' % (self.name)
 
+# Create a route that renders the index.html homepage template
 @app.route("/")
-def index():
-    """Return the homepage."""
+def home():
     return render_template("index.html")
 
-
 @app.route('/names')
-def names():
-    """Return a list of sample names."""
+def names_list():
+	inspector = inspect(engine)
+	columns = inspector.get_columns('samples')
+	names_list = []
+	for column in columns[1:]:
+ 		names_list.append(column['name'])
+	return jsonify(names_list)
 
-    # Use Pandas to perform the sql query
-    stmt = session.query(Samples).statement
-    df = pd.read_sql_query(stmt, session.bind)
-    df.set_index('otu_id', inplace=True)
-
-    # Return a list of the column names (sample names)
-    return jsonify(list(df.columns))
-
-# Returns a list of OTU descriptions 
 @app.route('/otu')
 def otu():
-    """Return a list of OTU descriptions."""
-    results = session.query(OTU.lowest_taxonomic_unit_found).all()
+	results = session.query(Otu.lowest_taxonomic_unit_found).all()
+	otu_list = []
+	for result in results:
+		otu_list.append(result[0])
+	return jsonify(otu_list)
 
-    # Use numpy ravel to extract list of tuples into a list of OTU descriptions
-    otu_list = list(np.ravel(results))
-    return jsonify(otu_list)
-
-# Returns a json dictionary of sample metadata 
 @app.route('/metadata/<sample>')
-def sample_metadata(sample):
-    """Return the MetaData for a given sample."""
-    sel = [Samples_Metadata.SAMPLEID, Samples_Metadata.ETHNICITY,
-           Samples_Metadata.GENDER, Samples_Metadata.AGE,
-           Samples_Metadata.LOCATION, Samples_Metadata.BBTYPE]
-    results = session.query(*sel).\
-        filter(Samples_Metadata.SAMPLEID == sample[3:]).all()
+def metadataSample(sample):
+	bb_id = sample[3:]
+	results = session.query(Metadata.AGE,\
+		Metadata.BBTYPE,\
+		Metadata.ETHNICITY,\
+		Metadata.GENDER,\
+		Metadata.LOCATION,\
+		Metadata.SAMPLEID).filter(Metadata.SAMPLEID == bb_id).first()
+	metadict = {
+		"AGE": results[0],
+		"BBTYPE": results[1],
+		"ETHNICITY": results[2],
+		"GENDER": results[3],
+		"LOCATION": results[4],
+		"SAMPLEID": results[5]
+	}
+	return jsonify(metadict)
 
-    sample_metadata = {}
-    for result in results:
-        sample_metadata['SAMPLEID'] = result[0]
-        sample_metadata['ETHNICITY'] = result[1]
-        sample_metadata['GENDER'] = result[2]
-        sample_metadata['AGE'] = result[3]
-        sample_metadata['LOCATION'] = result[4]
-        sample_metadata['BBTYPE'] = result[5]
-
-    return jsonify(sample_metadata)
-
-# Returns an integer value for the weekly washing frequency `WFREQ`
 @app.route('/wfreq/<sample>')
-def sample_wfreq(sample):
-    """Return the Weekly Washing Frequency as a number."""
-    # `sample[3:]` strips the `BB_` prefix
-    results = session.query(Samples_Metadata.WFREQ).\
-        filter(Samples_Metadata.SAMPLEID == sample[3:]).all()
-    wfreq = np.ravel(results)
+def wfreq(sample):
+    bb_id = sample[3:]
+    result = session.query(Metadata.WFREQ,\
+                           Metadata.SAMPLEID)\
+                    .filter(Metadata.SAMPLEID == bb_id).first()
+    return jsonify(result)
 
-    # Return only the first integer value for washing frequency
-    return jsonify(int(wfreq[0]))
 
-# Return a list of dictionaries containing sorted lists  for `otu_ids`and `sample_values`
+
 @app.route('/samples/<sample>')
-def samples(sample):
-    """Return a list dictionaries containing `otu_ids` and `sample_values`."""
-    stmt = session.query(Samples).statement
-    df = pd.read_sql_query(stmt, session.bind)
+def samp(sample):
+    bb_id_query = f"Samples.{sample}"
+    results = session.query(Samples.otu_id,\
+                           bb_id_query)\
+                     .order_by(desc(bb_id_query))
+    sampdict = {"otu_ids": [result[0] for result in results],
+                "sample_values": [result[1] for result in results]}
+    return jsonify(sampdict)
 
-    # Make sure that the sample was found in the columns, else throw an error
-    if sample not in df.columns:
-        return jsonify(f"Error! Sample: {sample} Not Found!"), 400
-
-    # Return any sample values greater than 1
-    df = df[df[sample] > 1]
-
-    # Sort the results by sample in descending order
-    df = df.sort_values(by=sample, ascending=0)
-
-    # Format the data to send as json
-    data = [{
-        "otu_ids": df[sample].index.values.tolist(),
-        "sample_values": df[sample].values.tolist()
-    }]
-    return jsonify(data)
-if __name__ == "__main__":
-    app.run(debug=True)
- 
+if __name__ == '__main__':
+    port = int(os.environ.get('PORT', 5000))
+    app.run(host='0.0.0.0', port = port, debug=True)
