@@ -11,17 +11,23 @@ from flask import (Flask,render_template,jsonify,request,redirect)
 
 app = Flask(__name__)
 app.config['TEMPLATES_AUTO_RELOAD']=True
+
 #################################################
 # Database Setup
 #################################################
+
 from flask_sqlalchemy import SQLAlchemy
 
 engine = create_engine("sqlite:///DataSets/belly_button_biodiversity.sqlite")
+
 # Reflecting db into a new model
+
 Base = automap_base()
 # reflect tables
+
 Base.prepare(engine, reflect=True)
 # Save to class
+
 session = Session(engine)
 Metadata = Base.classes.samples_metadata
 Otu = Base.classes.otu
@@ -29,7 +35,7 @@ Samples = Base.classes.samples
 def __repr__(self):
     return '<Bio %r>' % (self.name)
 
-# Create a route that renders the index.html homepage template
+# Create a route to html
 @app.route("/")
 def home():
     return render_template("index.html")
@@ -76,6 +82,8 @@ def wfreq(sample):
     result = session.query(Metadata.WFREQ,\
                            Metadata.SAMPLEID)\
                     .filter(Metadata.SAMPLEID == bb_id).first()
+    
+    
     return jsonify(result)
 
 
